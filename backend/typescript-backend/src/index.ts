@@ -1,51 +1,74 @@
-import { Router, Request } from 'express';
-import { VectorStoreIndex, Document, MetadataMode } from 'llamaindex';
-import fs from 'fs/promises';
+import { Router, Request, Response } from 'express';
+import { VectorStoreIndex, Document, MetadataMode, Settings, TogetherLLM, storageContextFromDefaults } from 'llamaindex';
+import fs, { readdirSync } from 'fs';
 import dotenv from 'dotenv';
+import path from 'path';
+import logger from './logger'; // Logger utility for logging messages
+
 dotenv.config();
 
 const indexRouter = Router();
 
+// Environment variables
+const TOGETHER_API_KEY = process.env.TOGETHER_API_KEY || '';
+const STORAGE_DIR = path.join(__dirname, '..', 'storage'); // directory to cache the generated index
+const DATA_DIR = path.join(__dirname, '..', 'data'); // directory containing the documents to index
+
+// Set the TogetherLLM instance in the global Settings object
+Settings.llm = new TogetherLLM({ apiKey: TOGETHER_API_KEY });
+
 // Define the index endpoint at the root of the index router
-indexRouter.get('/', async (req: Request, res) => {
+indexRouter.get('/', async (req: Request, res: Response) => {
     try {
-        // Load documents from a text file in the "data" directory
-        const path = "data/sample-essay.txt"; // Replace with the actual path to your text file
-        const essay = await fs.readFile(path, "utf-8");
+        // Check if storage already exists
+        if (!fs.existsSync(STORAGE_DIR)) {
+            logger.info("Creating new index");
+            // Load the documents and create the index
+            const documents = await loadDocumentsFromDirectory(DATA_DIR);
+            const storageContext = await storageContextFromDefaults({
+                persistDir: STORAGE_DIR,
+            });
+            const index = await VectorStoreIndex.fromDocuments(documents, {
+                storageContext,
+            });
+            // Store it for later
+            await storageContext.persist();
+            logger.info(`Finished creating new index. Stored in ${STORAGE_DIR}`);
+        } else {
+            // Load the existing index
+            logger.info(`Loading index from ${STORAGE_DIR}...`);
+            const storageContext = await storageContextFromDefaults({
+                persistDir: STORAGE_DIR,
+            });
+            const index = await VectorStoreIndex.loadFromStorage({
+                storageContext,
+            });
+            logger.info(`Finished loading index from ${STORAGE_DIR}`);
+        }
 
-        // Create Document object with essay
-        const document = new Document({ text: essay, id_: path });
-
-        // Split text and create embeddings. Store them in a VectorStoreIndex
-        const index = await VectorStoreIndex.fromDocuments([document]);
-
-        // Query the index
-        const queryEngine = index.asQueryEngine();
-        const queryText = typeof req.query.query === 'string' ? req.query.query : '';
-        const { response, sourceNodes } = await queryEngine.query({
-            query: queryText,
-        });
-
-        // Construct the response
-        const responseStructure = {
-            response: response,
-            sources: sourceNodes?.map((source, index) => ({
-                index: index,
-                score: source.score,
-                content: source.node.getContent(MetadataMode.NONE).substring(0, 50) + '...',
-            })),
-        };
-
-        // Send the response back to the client
-        res.json(responseStructure);
+        // Respond with a simple message for now
+        res.json({ message: 'Index route is functional' });
     } catch (error) {
         // Handle errors
         if (error instanceof Error) {
+            logger.error(error.message);
             res.status(500).json({ error: error.message });
         } else {
+            logger.error('An unknown error occurred');
             res.status(500).json({ error: 'An unknown error occurred' });
         }
     }
 });
 
 export default indexRouter;
+
+// Utility function to load documents from a directory
+async function loadDocumentsFromDirectory(directory: string): Promise<Document[]> {
+    const fileNames = readdirSync(directory);
+    const documents = fileNames.map((fileName) => {
+        const filePath = path.join(directory, fileName);
+        const fileContent = fs.readFileSync(filePath, 'utf-8');
+        return new Document({ text: fileContent, id_: filePath });
+    });
+    return documents;
+}

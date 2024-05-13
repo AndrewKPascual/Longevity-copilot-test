@@ -1,9 +1,21 @@
 import { Router } from 'express';
-import { VectorStoreIndex, Document, MetadataMode, NodeWithScore } from 'llamaindex';
+import { VectorStoreIndex, Document, MetadataMode, NodeWithScore, Settings, TogetherLLM, OpenAIEmbedding } from 'llamaindex';
 import fs from 'node:fs/promises';
 
 // Create a new router to handle chat endpoints
 const chatRouter = Router();
+
+// Retrieve the TOGETHER_API_KEY from the environment variables
+const togetherApiKey = process.env.TOGETHER_API_KEY;
+
+// Set the TogetherLLM instance in the global Settings object
+Settings.llm = new TogetherLLM({ apiKey: togetherApiKey });
+
+// Set the OpenAIEmbedding instance in the global Settings object
+Settings.embedModel = new OpenAIEmbedding({
+  apiKey: togetherApiKey,
+  model: "text-embedding-ada-002",
+});
 
 // Define the chat endpoint at the root of the chat router
 chatRouter.post('/', async (req, res) => {
