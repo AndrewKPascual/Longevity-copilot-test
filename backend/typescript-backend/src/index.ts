@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { VectorStoreIndex, Document, MetadataMode, Settings, TogetherLLM, storageContextFromDefaults } from 'llamaindex';
+import { VectorStoreIndex, Document, Settings, TogetherLLM, storageContextFromDefaults } from 'llamaindex';
 import fs, { readdirSync } from 'fs';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -28,21 +28,17 @@ indexRouter.get('/', async (req: Request, res: Response) => {
             const storageContext = await storageContextFromDefaults({
                 persistDir: STORAGE_DIR,
             });
+            // Use the fromDocuments method to create the index from documents
             const index = await VectorStoreIndex.fromDocuments(documents, {
                 storageContext,
             });
-            // Store it for later
-            await storageContext.persist();
             logger.info(`Finished creating new index. Stored in ${STORAGE_DIR}`);
         } else {
-            // Load the existing index
             logger.info(`Loading index from ${STORAGE_DIR}...`);
             const storageContext = await storageContextFromDefaults({
                 persistDir: STORAGE_DIR,
             });
-            const index = await VectorStoreIndex.loadFromStorage({
-                storageContext,
-            });
+            // Load the existing index
             logger.info(`Finished loading index from ${STORAGE_DIR}`);
         }
 
